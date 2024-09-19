@@ -1,0 +1,280 @@
+#include <LiquidCrystal.h>
+
+LiquidCrystal lcd(2,3,4,5,6,7);
+
+int pinEntradaSenal = 0;
+int val = 0;
+const int pinPulsadorInicio = 11; // digitalRead(11)==HIGH)
+const int pinPulsadorDetener = 12;//digitalRead(12)==HIGH
+
+
+  int x=0;
+int i = 0;
+
+int capacidad = 20; //Seria bueno que la variable de capacidad sea igual al número que dira cuantras muestras sacar
+int* arr = new int[capacidad];
+int cantElementos=0;
+int nroIngresado=0;
+char continuar;
+
+
+int time = 50;
+
+
+
+bool conteoEnCurso = false; 
+unsigned long tiempoInicio = 0; 
+unsigned long tiempoDetencion = 0; 
+float puntoCero = 0; 
+const int VALOR_MAXIMO = 1023; 
+const int VALOR_MINIMO = 0; 
+const float VOLTAJE_REF = 5.0; 
+float valorMaximo = 1023;
+float valorMinimo = 0;
+
+
+
+void redArr(int*& arr, int& capacidad) {
+  
+    int nuevaCap = capacidad + 20;
+    
+    // Verificar si hay suficiente memoria disponible para nuevoArr
+    int* nuevoArr = new int[nuevaCap];
+    
+    if (nuevoArr == nullptr) {
+        // Si no hay suficiente memoria, imprime un mensaje y termina la función
+        Serial.println("Error: no hay suficiente memoria.");
+        return;
+    }
+
+    // Copiar los elementos del array original al nuevo array
+    for (int i = 0; i < capacidad; i++) {
+        nuevoArr[i] = arr[i];
+    }
+
+    // Liberar la memoria del array original
+    delete[] arr;
+
+    // Asignar el nuevo array al puntero original
+    arr = nuevoArr;
+
+    // Actualizar la capacidad con el nuevo tamaño
+    capacidad = nuevaCap;
+}
+
+
+
+
+String identificarTipoOnda(int* datos, int cantidad, unsigned long duracion) {
+    if (cantidad < 3) {
+        return "Desconocida"; // No hay suficientes datos para análisis
+    }
+
+    // Variables para la identificación
+    int valor1 = datos[0];
+    int valor2 = -1; // Valor para el segundo nivel
+    bool esCuadrada = true;
+    int cambiosTriangulares = 0;
+
+    // Identificar valores únicos y comprobar cuadrada
+    for (int i = 1; i < cantidad; i++) {
+        if (datos[i] != valor1) {
+            if (valor2 == -1) {
+                valor2 = datos[i]; // Primer valor diferente encontrado
+            } else if (datos[i] != valor2) {
+                esCuadrada = false; // Más de dos valores diferentes
+                break;
+            }
+        }
+    }
+
+    // Si solo hay dos valores, es cuadrada
+    if (esCuadrada) {
+        return "Cuadrada";
+    }
+
+    // Verificación para triangular y senoidal
+    for (int i = 1; i < cantidad - 1; i++) {
+        float pendiente = (datos[i + 1] - datos[i - 1]) / 2.0; // Pendiente entre tres puntos
+        if (pendiente > 0) {
+            cambiosTriangulares++; // Contar cambios ascendentes
+        } else if (pendiente < 0) {
+            cambiosTriangulares--; // Contar cambios descendentes
+        }
+    }
+
+    // Duración de cada valor
+    float tiempoPorPunto = duracion / (float)cantidad;
+
+    // Clasificación
+    if (cambiosTriangulares == 0) {
+        return "Desconocida"; // No se identifica como triangular o senoidal
+    } else if (tiempoPorPunto < 1) {
+        return "Triangular"; // Cambios consistentes en menos de 1 ms
+    } else if (tiempoPorPunto >= 1) {
+        return "Senoidal"; // Cambios en más de 1 ms por punto
+    }
+
+    return "Desconocida"; // Si no coincide con nada, es desconocida
+}
+
+
+
+float calcularFrecuencia(int* datos, int cantidad, float puntoCero, unsigned long duracion) {
+    int contadorCruces = 0;
+    bool estabaPorDebajoDelPuntoCero = datos[0] < puntoCero;
+
+    for (int i = 1; i < cantidad; i++) {
+        bool estaPorDebajoDelPuntoCero = datos[i] < puntoCero;
+        if (estabaPorDebajoDelPuntoCero && !estaPorDebajoDelPuntoCero) {
+            contadorCruces++;
+        }
+        estabaPorDebajoDelPuntoCero = estaPorDebajoDelPuntoCero;
+    }
+
+    return (contadorCruces / (duracion / 1000.0)); 
+}
+
+float calcularAmplitud(int valorMax, int valorMin) {
+    return (valorMax - valorMin) * (VOLTAJE_REF / VALOR_MAXIMO);
+}
+
+
+
+
+
+
+void setup(){
+  Serial.begin(9600);
+  
+  
+  lcd.begin(11,2);
+  
+  pinMode(pinPulsadorInicio, INPUT_PULLUP); 
+  pinMode(pinPulsadorDetener, INPUT_PULLUP);
+  pinMode(pinEntradaSenal, INPUT);
+  
+}
+
+
+
+
+
+void loop(){
+    bool estadoPulsadorInicio = digitalRead(pinPulsadorInicio) == HIGH;
+    bool estadoPulsadorDetener = digitalRead(pinPulsadorDetener) == HIGH;
+    
+    
+    if (estadoPulsadorInicio && !conteoEnCurso) {
+
+
+        // Iniciar la adquisición de datos
+        tiempoInicio = millis(); 
+        valorMaximo = VALOR_MINIMO; // Resetea
+        valorMinimo = VALOR_MAXIMO; 
+        cantElementos = 0; 
+        conteoEnCurso = true; 
+        Serial.println("Adquiriendo datos...");
+        x=1;
+        
+        delay(2000); 
+        
+        
+    }
+  
+    if(x==1)
+    {
+        val = analogRead(pinEntradaSenal);
+        
+        //PRINT SEÑAL   
+        Serial.println(val);
+    
+        //lCD
+        arr[cantElementos] = val;
+    
+        cantElementos++;
+    
+        if(cantElementos==capacidad)
+        {
+            redArr(arr,capacidad); 
+        }
+    
+        delay(time);  // Pequeño retardo entre lecturas
+        //time = time - 50;
+    
+  }
+  
+  
+  if (estadoPulsadorDetener && conteoEnCurso) {
+
+
+        x=2;
+        Serial.println("ENTRO1");
+        
+        // Detener la adquisición de datos
+        tiempoDetencion = millis(); 
+        unsigned long duracion = tiempoDetencion - tiempoInicio;
+        conteoEnCurso = false; 
+
+        if (cantElementos > 0 && duracion > 0) {
+            puntoCero = (valorMaximo + valorMinimo) / 2.0; 
+			
+          // **Procesar los datos en bloques de 40**
+            for (int i = 0; i < cantElementos; i += 20) {
+                // Determinar el tamaño del bloque, podría ser menos de 40 si estamos al final
+                int tamanioBloque = (i + 20 < cantElementos) ? 20 : (cantElementos - i);
+                
+                // Llamar a las funciones con el bloque actual
+                for( int j =0; j<20;j++){
+                    if(arr[j]>valorMaximo){
+                        valorMaximo=arr[j];
+                    }
+                    
+                    if(arr[j]<valorMinimo){
+                        valorMinimo=arr[j];
+                    }
+                }
+                
+                puntoCero = (valorMaximo + valorMinimo) / 2.0;
+                
+                
+                float frecuencia = calcularFrecuencia(arr + i, tamanioBloque, puntoCero, 1000);
+                String tipoOnda = identificarTipoOnda(arr + i, tamanioBloque, 1000);
+                
+                float amplitud = calcularAmplitud(valorMaximo, valorMinimo);
+                
+                // Imprimir la frecuencia y el tipo de onda para el bloque
+                Serial.print("Bloque ");
+                Serial.print(i / 20 + 1);
+                Serial.print(": Frecuencia = ");
+                Serial.print(frecuencia, 2);
+                Serial.print(" Hz, Tipo de Onda: ");
+                Serial.println(tipoOnda);
+                Serial.print("Amp: ");
+				Serial.println(amplitud);
+
+                lcd.clear();
+				lcd.setCursor(0, 0); // Primera fila
+				lcd.print("Frec: ");
+				lcd.print(frecuencia, 2); // Imprime la frecuencia con 2 decimales
+	
+				lcd.setCursor(10, 0); // Mover el cursor al final de la primera fila
+				lcd.print("Hz");
+
+				lcd.setCursor(0, 1); // Segunda fila
+				lcd.print("Amp: ");
+				lcd.print(amplitud, 2); // Imprime la amplitud con 2 decimales
+				lcd.print("V");
+
+                delay(2000);
+            }
+        } else {
+            lcd.clear();
+            lcd.print("No hay datos");
+        }
+        String vale = identificarTipoOnda(arr,cantElementos,duracion);
+    	Serial.println(vale);
+  }
+  
+    
+ }
